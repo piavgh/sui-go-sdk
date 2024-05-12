@@ -5,9 +5,11 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
-	"golang.org/x/crypto/blake2b"
+	"fmt"
 	"log"
 	"strings"
+
+	"golang.org/x/crypto/blake2b"
 )
 
 type InputObjectKind map[string]interface{}
@@ -36,6 +38,12 @@ const (
 
 type HexData struct {
 	data []byte
+}
+
+type SignaturePubkeyPair struct {
+	SignatureScheme string
+	Signature       []byte
+	PubKey          []byte
 }
 
 func NewHexData(str string) (*HexData, error) {
@@ -113,7 +121,7 @@ func (txn *TxnMetaData) SignSerializedSigWith(privateKey ed25519.PrivateKey) *Si
 	}
 	return &SignedTransactionSerializedSig{
 		TxBytes:   txn.TxBytes,
-		Signature: toSerializedSignature(sigBytes, privateKey.Public().(ed25519.PublicKey)),
+		Signature: ToSerializedSignature(sigBytes, privateKey.Public().(ed25519.PublicKey)),
 	}
 }
 
@@ -125,7 +133,7 @@ func messageWithIntent(message []byte) []byte {
 	return intentMessage
 }
 
-func toSerializedSignature(signature, pubKey []byte) string {
+func ToSerializedSignature(signature, pubKey []byte) string {
 	signatureLen := len(signature)
 	pubKeyLen := len(pubKey)
 	serializedSignature := make([]byte, 1+signatureLen+pubKeyLen)
@@ -133,4 +141,41 @@ func toSerializedSignature(signature, pubKey []byte) string {
 	copy(serializedSignature[1:], signature)
 	copy(serializedSignature[1+signatureLen:], pubKey)
 	return base64.StdEncoding.EncodeToString(serializedSignature)
+}
+
+func parseSerializedSignature(serializedSignature string) (*SignaturePubkeyPair, error) {
+	_bytes, err := base64.StdEncoding.DecodeString(serializedSignature)
+	if err != nil {
+		return nil, err
+	}
+
+	signatureScheme := parseSignatureScheme(_bytes[0])
+	if strings.EqualFold(serializedSignature, "") {
+		return nil, fmt.Errorf("multiSig is not supported")
+	}
+
+	signature := _bytes[1 : len(_bytes)-32]
+	pubKeyBytes := _bytes[1+len(signature):]
+
+	keyPair := &SignaturePubkeyPair{
+		SignatureScheme: signatureScheme,
+		Signature:       signature,
+		PubKey:          pubKeyBytes,
+	}
+	return keyPair, nil
+}
+
+func parseSignatureScheme(scheme byte) string {
+	switch scheme {
+	case 0:
+		return "ED25519"
+	case 1:
+		return "Secp256k1"
+	case 2:
+		return "Secp256r1"
+	case 3:
+		return "MultiSig"
+	default:
+		return "ED25519"
+	}
 }

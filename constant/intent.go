@@ -1,4 +1,4 @@
-package signer
+package constant
 
 type AppId int
 
@@ -24,4 +24,3 @@ const (
 func IntentWithScope(intentScope IntentScope) []int {
 	return []int{int(intentScope), int(V0), int(Sui)}
 }
-
