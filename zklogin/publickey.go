@@ -2,11 +2,13 @@ package zklogin
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 
 	"github.com/machinebox/graphql"
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/block-vision/sui-go-sdk/cryptography/scheme"
 	"github.com/block-vision/sui-go-sdk/mystenbcs"
@@ -43,32 +45,40 @@ func (p *ZkLoginPublicIdentifier) toRawBytes() []byte {
 	return p.data
 }
 
-func (p *ZkLoginPublicIdentifier) ToSuiAddress() string {
-
+func (p *ZkLoginPublicIdentifier) toSuiAddress() string {
 	// Each hex char represents half a byte, hence hex address doubles the length
 	// return normalizeSuiAddress(
 	// 	bytesToHex(blake2b(this.toSuiBytes(), { dkLen: 32 })).slice(0, SUI_ADDRESS_LENGTH * 2),
 	// );
 
 	// Convert the public identifier to a Sui address
-	return "0x" + mystenbcs.ToHex(mystenbcs.Blake2b(p.toSuiBytes(), 32))[:40]
+	newPubkey := []byte{byte(0x00)}
+	newPubkey = append(newPubkey, p.data...)
+
+	addrBytes := blake2b.Sum256(newPubkey)
+	return fmt.Sprintf("0x%s", hex.EncodeToString(addrBytes[:])[:64])
 }
 
-func (pk *ZkLoginPublicIdentifier) VerifyPersonalMessage(message []byte, signature []byte, client *graphql.Client) (bool, error) {
+func (pk *ZkLoginPublicIdentifier) VerifyPersonalMessage(message []byte, signature []byte, client *graphql.Client) (string, bool, error) {
 	// Parse the serialized zkLogin signature
 	parsedSignature, err := ParseSerializedZkLoginSignature(signature)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse serialized zkLogin signature: %w", err)
+		return "", false, fmt.Errorf("failed to parse serialized zkLogin signature: %w", err)
 	}
 
 	// convert the public key to a Sui address
-	address := pk.ToSuiAddress()
+	address := pk.toSuiAddress()
 
 	// Convert the message to Base64
 	bytesEncoded := mystenbcs.ToBase64(message)
 
 	// Call the GraphQL verification function
-	return GraphqlVerifyZkLoginSignature(address, bytesEncoded, string(parsedSignature.SerializedSignature), "PERSONAL_MESSAGE", client)
+	pass, err := GraphqlVerifyZkLoginSignature(address, bytesEncoded, string(parsedSignature.SerializedSignature), "PERSONAL_MESSAGE", client)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to verify zkLogin signature: %w", err)
+	}
+
+	return address, pass, nil
 }
 
 func toZkLoginPublicIdentifier(addressSeed *big.Int, iss string, options *ZkLoginPublicIdentifierOptions) *ZkLoginPublicIdentifier {

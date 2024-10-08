@@ -194,7 +194,8 @@ func VerifyTransaction(b64Message string, signature string) (signer string, pass
 
 func VerifyMessage(message, signature string, scope constant.IntentScope) (signer string, pass bool, err error) {
 	b64Bytes, _ := base64.StdEncoding.DecodeString(message)
-	messageBytes := NewMessageWithIntent(b64Bytes, scope)
+	bcsBytes := append([]byte{uint8(len(b64Bytes))}, b64Bytes...)
+	messageBytes := NewMessageWithIntent(bcsBytes, scope)
 
 	serializedSignature, err := FromSerializedSignature(signature)
 	if err != nil {
@@ -205,9 +206,6 @@ func VerifyMessage(message, signature string, scope constant.IntentScope) (signe
 	pass = ed25519.Verify(serializedSignature.PubKey[:], digest[:], serializedSignature.Signature)
 
 	signer = Ed25519PublicKeyToSuiAddress(serializedSignature.PubKey)
-	if err != nil {
-		return "", false, fmt.Errorf("invalid signer %v", err)
-	}
 
 	return
 }
